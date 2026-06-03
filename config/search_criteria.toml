@@ -6,10 +6,10 @@
 [search]
 # The brands you are interested in. Future scrapers can use these values when
 # building search URLs or filtering listing results.
-brands = ["ARC8", "Scott"]
+brands = ["Arc8", "ARC8", "Scott"]
 
 # Maximum price in your local currency.
-max_price = 1500
+max_price = 6000
 
 # Optional frame size filter. Leave this empty if you do not care.
 frame_size = "L"

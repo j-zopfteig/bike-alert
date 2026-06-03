@@ -9,7 +9,7 @@ objects for the rest of the app.
 import logging
 import re
 import time
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunparse
 
 from bs4 import BeautifulSoup
@@ -24,6 +24,19 @@ from bike_alert.scrapers.base import BaseScraper
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class VelomarktFilterStats:
+    """Counters for one Velomarkt scraping run."""
+
+    total_cards_found: int = 0
+    kept_listings: int = 0
+    skipped_by_brand: int = 0
+    skipped_by_price: int = 0
+    skipped_by_frame_size: int = 0
+    skipped_by_category: int = 0
+    manual_review_listings: int = 0
+
+
 class VelomarktScraper(BaseScraper):
     """Scrape one configured Velomarkt.ch listing page."""
 
@@ -33,16 +46,23 @@ class VelomarktScraper(BaseScraper):
     EXCLUDED_CATEGORY_KEYWORDS = {
         "accessories",
         "accessory",
-        "parts",
         "clothing",
-        "shoes",
-        "helmets",
-        "helmet",
+        "kleider",
+        "parts",
+        "zubehör",
+        "zubehoer",
         "components",
         "component",
+        "komponenten",
         "spare parts",
-        "tool",
-        "tools",
+        "shoes",
+        "schuhe",
+        "helmets",
+        "helmet",
+        "helme",
+        "children",
+        "kids",
+        "kinder",
     }
     INCLUDED_CATEGORY_KEYWORDS = {
         "bike",
@@ -54,16 +74,22 @@ class VelomarktScraper(BaseScraper):
         "frame",
         "frames",
         "rahmen",
+        "rennvelos",
+        "rennvelo",
         "racing",
         "mountain",
+        "mountainbikes",
+        "mountainbike",
         "city",
         "tour",
+        "e-bikes",
         "e-bike",
         "ebike",
         "electric",
         "gravel",
+        "radquer",
+        "cross",
         "cyclo-cross",
-        "kids",
     }
     HEADERS = {
         "User-Agent": (
@@ -73,6 +99,10 @@ class VelomarktScraper(BaseScraper):
         ),
         "Accept-Language": "en-US,en;q=0.9,de-CH;q=0.8,de;q=0.7",
     }
+
+    def __init__(self, search_config) -> None:
+        super().__init__(search_config=search_config)
+        self._stats = VelomarktFilterStats()
 
     @property
     def name(self) -> str:
@@ -84,6 +114,7 @@ class VelomarktScraper(BaseScraper):
         """Fetch and parse listings from the configured Velomarkt URL."""
 
         listings: list[BikeListing] = []
+        self._stats = VelomarktFilterStats()
 
         for page_number in range(1, self.search_config.max_pages + 1):
             page_url = self._build_page_url(page_number)
@@ -107,6 +138,7 @@ class VelomarktScraper(BaseScraper):
                 page_number,
                 len(cards),
             )
+            self._stats.total_cards_found += len(cards)
 
             if not cards:
                 logger.info("Stopping pagination because page %s has no cards", page_number)
@@ -127,6 +159,9 @@ class VelomarktScraper(BaseScraper):
                     continue
 
                 listings.append(filtered_listing)
+                self._stats.kept_listings += 1
+                if filtered_listing.needs_manual_review:
+                    self._stats.manual_review_listings += 1
                 logger.info(
                     "Keeping Velomarkt listing: title=%r brand=%r price=%r "
                     "location=%r frame_size=%r confidence=%s relevant=%s review=%s url=%s",
@@ -145,6 +180,18 @@ class VelomarktScraper(BaseScraper):
                 time.sleep(self.PAGE_DELAY_SECONDS)
 
         logger.info("Extracted %s Velomarkt listings", len(listings))
+        logger.info(
+            "Velomarkt filtering summary: total cards found=%s, kept listings=%s, "
+            "skipped by brand=%s, skipped by price=%s, skipped by frame size=%s, "
+            "skipped by category=%s, manual review listings=%s",
+            self._stats.total_cards_found,
+            self._stats.kept_listings,
+            self._stats.skipped_by_brand,
+            self._stats.skipped_by_price,
+            self._stats.skipped_by_frame_size,
+            self._stats.skipped_by_category,
+            self._stats.manual_review_listings,
+        )
         return listings
 
     def _parse_card(self, card: Tag) -> tuple[BikeListing, str | None, str | None] | None:
@@ -200,14 +247,19 @@ class VelomarktScraper(BaseScraper):
         """
 
         if not self._matches_configured_brand(listing):
-            logger.info("Skipping %r because no configured brand matched", listing.title)
-            return None
+            return self._skip_listing(
+                listing=listing,
+                category=category,
+                subcategory=subcategory,
+                counter_name="skipped_by_brand",
+                reason="no configured brand matched title, brand, model, or raw_text",
+            )
 
-        listing = self._apply_price_filter(listing)
+        listing = self._apply_price_filter(listing, category, subcategory)
         if listing is None:
             return None
 
-        listing = self._apply_frame_size_filter(listing)
+        listing = self._apply_frame_size_filter(listing, category, subcategory)
         if listing is None:
             return None
 
@@ -229,7 +281,12 @@ class VelomarktScraper(BaseScraper):
 
         return any(brand.casefold() in haystack for brand in self.search_config.brands)
 
-    def _apply_price_filter(self, listing: BikeListing) -> BikeListing | None:
+    def _apply_price_filter(
+        self,
+        listing: BikeListing,
+        category: str | None,
+        subcategory: str | None,
+    ) -> BikeListing | None:
         """Skip expensive listings and keep missing prices for manual review."""
 
         max_price = self.search_config.max_price
@@ -241,17 +298,22 @@ class VelomarktScraper(BaseScraper):
             return replace(listing, needs_manual_review=True)
 
         if listing.price > max_price:
-            logger.info(
-                "Skipping %r because price %s is above max_price %s",
-                listing.title,
-                listing.price,
-                max_price,
+            return self._skip_listing(
+                listing=listing,
+                category=category,
+                subcategory=subcategory,
+                counter_name="skipped_by_price",
+                reason=f"price {listing.price} is above max_price {max_price}",
             )
-            return None
 
         return listing
 
-    def _apply_frame_size_filter(self, listing: BikeListing) -> BikeListing | None:
+    def _apply_frame_size_filter(
+        self,
+        listing: BikeListing,
+        category: str | None,
+        subcategory: str | None,
+    ) -> BikeListing | None:
         """Keep matching sizes, skip clear mismatches, review unknown sizes."""
 
         if listing.frame_size is None or listing.frame_size_confidence == "unknown":
@@ -262,13 +324,16 @@ class VelomarktScraper(BaseScraper):
             return replace(listing, needs_manual_review=True)
 
         if not listing.is_relevant:
-            logger.info(
-                "Skipping %r because frame size %r does not match targets %s",
-                listing.title,
-                listing.frame_size,
-                self.search_config.target_frame_sizes,
+            return self._skip_listing(
+                listing=listing,
+                category=category,
+                subcategory=subcategory,
+                counter_name="skipped_by_frame_size",
+                reason=(
+                    f"frame_size {listing.frame_size!r} does not match "
+                    f"target_frame_sizes {self.search_config.target_frame_sizes}"
+                ),
             )
-            return None
 
         return listing
 
@@ -297,12 +362,13 @@ class VelomarktScraper(BaseScraper):
             return listing
 
         if any(keyword in category_text for keyword in self.EXCLUDED_CATEGORY_KEYWORDS):
-            logger.info(
-                "Skipping %r because category/subcategory is not a bike: %r",
-                listing.title,
-                category_text,
+            return self._skip_listing(
+                listing=listing,
+                category=category,
+                subcategory=subcategory,
+                counter_name="skipped_by_category",
+                reason=f"category/subcategory is excluded: {category_text!r}",
             )
-            return None
 
         if any(keyword in category_text for keyword in self.INCLUDED_CATEGORY_KEYWORDS):
             return listing
@@ -313,6 +379,31 @@ class VelomarktScraper(BaseScraper):
             category_text,
         )
         return replace(listing, needs_manual_review=True)
+
+    def _skip_listing(
+        self,
+        listing: BikeListing,
+        category: str | None,
+        subcategory: str | None,
+        counter_name: str,
+        reason: str,
+    ) -> None:
+        """Log a skipped listing with full context and increment one counter."""
+
+        setattr(self._stats, counter_name, getattr(self._stats, counter_name) + 1)
+        logger.info(
+            "Skipping Velomarkt listing: title=%r brand=%r price=%r category=%r "
+            "subcategory=%r frame_size=%r url=%s reason=%s",
+            listing.title,
+            listing.brand,
+            listing.price,
+            category,
+            subcategory,
+            listing.frame_size,
+            listing.url,
+            reason,
+        )
+        return None
 
     def _build_page_url(self, page_number: int) -> str:
         """Build a Velomarkt page URL from the configured first-page URL."""

@@ -1,7 +1,7 @@
 """Frame-size parsing and relevance decisions.
 
 Marketplace listings are written by humans, so frame sizes can appear in many
-forms: "Size L", "Grösse L", "RH 56", "56 cm", and so on. This module keeps
+forms: "Size L", "Groesse L", "RH 56", "56 cm", and so on. This module keeps
 that parsing logic in one place so every scraper can use the same rules.
 """
 
@@ -47,21 +47,14 @@ def evaluate_frame_size(
 
 
 def parse_frame_size(text: str) -> tuple[str | None, str]:
-    """Extract a likely frame size from free text.
-
-    Returns:
-        A tuple of `(frame_size, confidence)`. The size is normalized to values
-        such as `"L"` or `"56"`.
-    """
+    """Extract a likely frame size from free text."""
 
     normalized_text = _normalize_text(text)
 
-    # Strong patterns: the text explicitly says the nearby value is a frame
-    # size. These are the clearest matches and should win over generic tokens.
     labeled_patterns = [
-        r"\b(?:size|grösse|groesse|rahmen|rahmengrösse|rahmengroesse)\s*[:\-]?\s*(XS|S|M|L|XL)\b",
-        r"\b(?:rh|rahmenhöhe|rahmenhoehe)\s*[:\-]?\s*(\d{2})\b",
-        r"\b(?:size|grösse|groesse|rahmen|rahmengrösse|rahmengroesse)\s*[:\-]?\s*(\d{2})\b",
+        r"\b(?:size|gr\u00f6sse|groesse|rahmen|rahmengr\u00f6sse|rahmengroesse)\s*[:\-]?\s*(XS|S|M|L|XL|SMALL|MEDIUM|LARGE|EXTRA\s+LARGE)\b",
+        r"\b(?:rh|rahmenh\u00f6he|rahmenhoehe)\s*[:\-]?\s*(\d{2})\b",
+        r"\b(?:size|gr\u00f6sse|groesse|rahmen|rahmengr\u00f6sse|rahmengroesse)\s*[:\-]?\s*(\d{2})\b",
     ]
 
     for pattern in labeled_patterns:
@@ -71,16 +64,12 @@ def parse_frame_size(text: str) -> tuple[str | None, str]:
             if _is_supported_size(size):
                 return size, "high"
 
-    # Numeric road-bike sizes are commonly written as "56 cm" or "56cm".
     cm_match = re.search(r"\b(\d{2})\s*cm\b", normalized_text, flags=re.IGNORECASE)
     if cm_match:
         size = normalize_frame_size(cm_match.group(1))
         if _is_supported_size(size):
             return size, "high"
 
-    # Bare letter sizes are useful in titles like "Wilier ... M" or
-    # "Cube ... L". This is less explicit than "Grösse L", but still practical
-    # for listing titles.
     bare_letter_match = re.search(r"\b(XS|S|M|L|XL)\b", normalized_text)
     if bare_letter_match:
         return normalize_frame_size(bare_letter_match.group(1)), "medium"
@@ -91,7 +80,14 @@ def parse_frame_size(text: str) -> tuple[str | None, str]:
 def normalize_frame_size(frame_size: str) -> str:
     """Normalize size text before comparing values."""
 
-    return frame_size.strip().upper().replace("CM", "")
+    normalized = " ".join(frame_size.strip().upper().replace("CM", "").split())
+    long_sizes = {
+        "SMALL": "S",
+        "MEDIUM": "M",
+        "LARGE": "L",
+        "EXTRA LARGE": "XL",
+    }
+    return long_sizes.get(normalized, normalized)
 
 
 def _normalize_text(text: str) -> str:
@@ -109,6 +105,4 @@ def _is_supported_size(frame_size: str) -> bool:
     if not frame_size.isdigit():
         return False
 
-    # Road bike frame sizes usually sit roughly in this range. The guard avoids
-    # confusing rider height values like "180 cm" with frame sizes.
     return 44 <= int(frame_size) <= 64
