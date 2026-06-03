@@ -1,0 +1,12 @@
+[project]
+name = "bike-alert"
+version = "0.1.0"
+description = "Beginner-friendly architecture for a bike listing alert application."
+requires-python = ">=3.14"
+dependencies = [
+    "openpyxl>=3.1.5",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py314"

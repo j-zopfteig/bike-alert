@@ -1,0 +1,27 @@
+# Search criteria for Bike Alert.
+#
+# TOML is used because Python can read it with the standard-library `tomllib`
+# module. That keeps configuration readable without needing another dependency.
+
+[search]
+# The brands you are interested in. Future scrapers can use these values when
+# building search URLs or filtering listing results.
+brands = ["Cube", "Trek", "Specialized"]
+
+# Maximum price in your local currency.
+max_price = 1500
+
+# Optional frame size filter. Leave this empty if you do not care.
+frame_size = "M"
+
+# Search locations can be city names, regions, or marketplace-specific areas.
+locations = ["Zurich", "Winterthur"]
+
+# Minimum publication date filter. This is a plain string for now to keep the
+# beginner example simple. Later, this can become a real `datetime.date`.
+posted_after = "2026-01-01"
+
+[alerts]
+# This project does not send alerts yet. The setting is here to show where
+# future notification behavior can live.
+enabled = false
