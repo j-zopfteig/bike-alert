@@ -11,6 +11,7 @@ from pathlib import Path
 from bike_alert.config import load_search_config
 from bike_alert.database import Database
 from bike_alert.exporters.excel_exporter import export_listings_to_excel
+from bike_alert.scrapers.bike_discount_scraper import BikeDiscountScraper
 from bike_alert.scrapers.fake_scraper import FakeScraper
 
 
@@ -37,8 +38,8 @@ def run() -> None:
 
     1. Load search settings from the configuration file.
     2. Create the SQLite database and required tables if needed.
-    3. Run fake scraper classes.
-    4. Save fake listings to the database.
+    3. Run scraper classes.
+    4. Save found listings to the database.
     5. Read all stored listings back from SQLite.
     6. Export the stored listings to Excel.
 
@@ -57,10 +58,11 @@ def run() -> None:
     logger.info("Preparing SQLite database at %s", DATABASE_PATH)
     database.initialize()
 
-    # The fake scraper returns hardcoded listings. It does not make network
-    # requests, so it is safe and repeatable while learning the architecture.
+    # FakeScraper stays useful for predictable local learning data.
+    # BikeDiscountScraper is the first real requests + BeautifulSoup scraper.
     scrapers = [
         FakeScraper(search_config=search_config),
+        BikeDiscountScraper(search_config=search_config),
     ]
 
     all_listings = []
@@ -77,7 +79,7 @@ def run() -> None:
     logger.info("Inserted %s new listings", inserted_count)
     logger.info("Database now contains %s unique listings", len(stored_listings))
 
-    export_listings_to_excel(stored_listings, EXPORT_PATH)
+    written_export_path = export_listings_to_excel(stored_listings, EXPORT_PATH)
 
-    logger.info("Exported %s listings to %s", len(stored_listings), EXPORT_PATH)
+    logger.info("Exported %s listings to %s", len(stored_listings), written_export_path)
     logger.info("Bike Alert finished")

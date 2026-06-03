@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "Beginner-friendly architecture for a bike listing alert application."
 requires-python = ">=3.14"
 dependencies = [
+    "beautifulsoup4>=4.12.3",
     "openpyxl>=3.1.5",
+    "requests>=2.32.3",
 ]
 
 [tool.ruff]

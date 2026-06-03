@@ -60,8 +60,10 @@ class Database:
     def save_listings(self, listings: list[BikeListing]) -> int:
         """Save bike listings to SQLite.
 
-        `INSERT OR IGNORE` prevents duplicate rows when a listing has the same
-        URL as one already stored in the database.
+        The `url` column is unique, so SQLite allows only one row for each
+        listing URL. If a URL is new, the row is inserted. If a URL already
+        exists, the row is updated with the latest title, price, location,
+        source, and posted date.
 
         Returns:
             The number of new rows inserted.
@@ -83,11 +85,13 @@ class Database:
             for listing in listings
         ]
 
+        urls = [listing.url for listing in listings]
+
         with self.connect() as connection:
-            before_count = connection.total_changes
+            existing_urls = self._find_existing_urls(connection, urls)
             connection.executemany(
                 """
-                INSERT OR IGNORE INTO bike_listings (
+                INSERT INTO bike_listings (
                     title,
                     price,
                     location,
@@ -96,17 +100,39 @@ class Database:
                     posted_date
                 )
                 VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(url) DO UPDATE SET
+                    title = excluded.title,
+                    price = excluded.price,
+                    location = excluded.location,
+                    source = excluded.source,
+                    posted_date = excluded.posted_date
                 """,
                 rows,
             )
-            inserted_count = connection.total_changes - before_count
+
+        inserted_count = len(set(urls) - existing_urls)
 
         logger.info(
-            "Saved listings to SQLite: %s new, %s ignored as duplicates",
+            "Saved listings to SQLite: %s new, %s updated because the URL already existed",
             inserted_count,
             len(listings) - inserted_count,
         )
         return inserted_count
+
+    def _find_existing_urls(
+        self,
+        connection: sqlite3.Connection,
+        urls: list[str],
+    ) -> set[str]:
+        """Return the URLs that are already present in the database."""
+
+        placeholders = ", ".join("?" for _ in urls)
+        rows = connection.execute(
+            f"SELECT url FROM bike_listings WHERE url IN ({placeholders})",
+            urls,
+        ).fetchall()
+
+        return {row["url"] for row in rows}
 
     def list_all_listings(self) -> list[BikeListing]:
         """Load all unique bike listings currently stored in SQLite."""

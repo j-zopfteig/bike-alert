@@ -8,13 +8,13 @@ The project is set up for:
 - SQLite storage
 - TOML configuration for search criteria
 - A scraper architecture with a reusable base class
+- A real scraper using `requests` and BeautifulSoup
 - Excel export
 - Clear separation between app startup, configuration, database access,
   scraping, and exporting
 
-Actual web scraping is intentionally not implemented yet. The app currently
-uses a fake scraper with five hardcoded listings so the database and Excel
-export can be tested safely.
+The app includes both a fake scraper with five hardcoded listings and a real
+scraper for one public bike listing page.
 
 ## Project Structure
 
@@ -42,6 +42,7 @@ bike-alert/
     `-- scrapers/
         |-- __init__.py
         |-- base.py
+        |-- bike_discount_scraper.py
         |-- example_scraper.py
         `-- fake_scraper.py
 ```
@@ -98,6 +99,11 @@ any network requests or parsing.
 : Returns five hardcoded `BikeListing` objects. It behaves like a scraper from
 the app's point of view, but it does not scrape websites.
 
+`bike_alert/scrapers/bike_discount_scraper.py`
+: Uses `requests` to download Bike-Discount's public bike category page, parses
+the HTML with BeautifulSoup, converts product cards into `BikeListing` objects,
+and logs each extracted listing.
+
 `bike_alert/exporters/excel_exporter.py`
 : Exports bike listings to an `.xlsx` file using `openpyxl`.
 
@@ -109,10 +115,13 @@ the app's point of view, but it does not scrape websites.
 4. `database.py` creates `data/bike_alert.sqlite3` and the `bike_listings`
    table if they do not exist yet.
 5. `FakeScraper` returns five hardcoded listings.
-6. `Database.save_listings()` uses `INSERT OR IGNORE` with a unique `url`
-   column, so running the app repeatedly does not create duplicate rows.
-7. `Database.list_all_listings()` reads the unique stored listings back.
-8. `excel_exporter.py` writes those listings to `exports/bike_listings.xlsx`.
+6. `BikeDiscountScraper` requests one public bike listing page and parses its
+   product cards with BeautifulSoup.
+7. `Database.save_listings()` uses a unique `url` column plus SQLite upsert
+   logic, so running the app repeatedly does not create duplicate rows and
+   existing listings can still receive updated prices.
+8. `Database.list_all_listings()` reads the unique stored listings back.
+9. `excel_exporter.py` writes those listings to `exports/bike_listings.xlsx`.
 
 ## Install
 
