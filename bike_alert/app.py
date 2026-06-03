@@ -11,7 +11,6 @@ from pathlib import Path
 from bike_alert.config import load_search_config
 from bike_alert.database import Database
 from bike_alert.exporters.excel_exporter import export_listings_to_excel
-from bike_alert.scrapers.fake_scraper import FakeScraper
 from bike_alert.scrapers.velomarkt_scraper import VelomarktScraper
 
 
@@ -58,10 +57,9 @@ def run() -> None:
     logger.info("Preparing SQLite database at %s", DATABASE_PATH)
     database.initialize()
 
-    # FakeScraper stays useful for predictable local test data.
-    # VelomarktScraper is the first real Swiss used-bike marketplace scraper.
+    # FakeScraper stays in the project for tests and examples, but the normal
+    # application run stores only filtered Velomarkt marketplace listings.
     scrapers = [
-        FakeScraper(search_config=search_config),
         VelomarktScraper(search_config=search_config),
     ]
 

@@ -8,7 +8,9 @@ objects for the rest of the app.
 
 import logging
 import re
-from urllib.parse import urljoin
+import time
+from dataclasses import replace
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunparse
 
 from bs4 import BeautifulSoup
 from bs4.element import Tag
@@ -27,6 +29,42 @@ class VelomarktScraper(BaseScraper):
 
     SOURCE_NAME = "Velomarkt.ch"
     BASE_URL = "https://velomarkt.ch"
+    PAGE_DELAY_SECONDS = 1
+    EXCLUDED_CATEGORY_KEYWORDS = {
+        "accessories",
+        "accessory",
+        "parts",
+        "clothing",
+        "shoes",
+        "helmets",
+        "helmet",
+        "components",
+        "component",
+        "spare parts",
+        "tool",
+        "tools",
+    }
+    INCLUDED_CATEGORY_KEYWORDS = {
+        "bike",
+        "bikes",
+        "bicycle",
+        "bicycles",
+        "velo",
+        "velos",
+        "frame",
+        "frames",
+        "rahmen",
+        "racing",
+        "mountain",
+        "city",
+        "tour",
+        "e-bike",
+        "ebike",
+        "electric",
+        "gravel",
+        "cyclo-cross",
+        "kids",
+    }
     HEADERS = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -45,47 +83,71 @@ class VelomarktScraper(BaseScraper):
     def fetch_listings(self) -> list[BikeListing]:
         """Fetch and parse listings from the configured Velomarkt URL."""
 
-        url = self.search_config.velomarkt_search_url
-        logger.info("Requesting Velomarkt page: %s", url)
-
-        try:
-            response = requests.get(url, headers=self.HEADERS, timeout=20)
-            response.raise_for_status()
-        except requests.RequestException as error:
-            logger.warning("Could not fetch Velomarkt page %s: %s", url, error)
-            return []
-
-        logger.info("Downloaded %s bytes from Velomarkt", len(response.text))
-
-        soup = BeautifulSoup(response.text, "html.parser")
-        cards = [card for card in soup.select(".bike-item") if isinstance(card, Tag)]
-        logger.info("Found %s Velomarkt listing cards", len(cards))
-
         listings: list[BikeListing] = []
-        for card in cards:
-            listing = self._parse_card(card)
-            if listing is None:
-                continue
 
-            listings.append(listing)
+        for page_number in range(1, self.search_config.max_pages + 1):
+            page_url = self._build_page_url(page_number)
+            logger.info("Requesting Velomarkt page %s: %s", page_number, page_url)
+
+            try:
+                response = requests.get(page_url, headers=self.HEADERS, timeout=20)
+                response.raise_for_status()
+            except requests.RequestException as error:
+                logger.warning("Could not fetch Velomarkt page %s: %s", page_url, error)
+                break
+
+            logger.info("Downloaded %s bytes from Velomarkt", len(response.text))
+
+            soup = BeautifulSoup(response.text, "html.parser")
+            cards = [
+                card for card in soup.select(".bike-item") if isinstance(card, Tag)
+            ]
             logger.info(
-                "Extracted Velomarkt listing: title=%r brand=%r price=%r "
-                "location=%r frame_size=%r confidence=%s relevant=%s review=%s url=%s",
-                listing.title,
-                listing.brand,
-                listing.price,
-                listing.location,
-                listing.frame_size,
-                listing.frame_size_confidence,
-                listing.is_relevant,
-                listing.needs_manual_review,
-                listing.url,
+                "Velomarkt page %s has %s listing cards",
+                page_number,
+                len(cards),
             )
+
+            if not cards:
+                logger.info("Stopping pagination because page %s has no cards", page_number)
+                break
+
+            for card in cards:
+                parsed = self._parse_card(card)
+                if parsed is None:
+                    continue
+
+                listing, category, subcategory = parsed
+                filtered_listing = self._apply_filters(
+                    listing=listing,
+                    category=category,
+                    subcategory=subcategory,
+                )
+                if filtered_listing is None:
+                    continue
+
+                listings.append(filtered_listing)
+                logger.info(
+                    "Keeping Velomarkt listing: title=%r brand=%r price=%r "
+                    "location=%r frame_size=%r confidence=%s relevant=%s review=%s url=%s",
+                    filtered_listing.title,
+                    filtered_listing.brand,
+                    filtered_listing.price,
+                    filtered_listing.location,
+                    filtered_listing.frame_size,
+                    filtered_listing.frame_size_confidence,
+                    filtered_listing.is_relevant,
+                    filtered_listing.needs_manual_review,
+                    filtered_listing.url,
+                )
+
+            if page_number < self.search_config.max_pages:
+                time.sleep(self.PAGE_DELAY_SECONDS)
 
         logger.info("Extracted %s Velomarkt listings", len(listings))
         return listings
 
-    def _parse_card(self, card: Tag) -> BikeListing | None:
+    def _parse_card(self, card: Tag) -> tuple[BikeListing, str | None, str | None] | None:
         """Convert one Velomarkt `.bike-item` card into a `BikeListing`."""
 
         title = self._extract_title(card)
@@ -97,6 +159,8 @@ class VelomarktScraper(BaseScraper):
             return None
 
         brand = self._extract_labeled_value(card, "Brand")
+        category = self._extract_labeled_value(card, "Category")
+        subcategory = self._extract_labeled_value(card, "Subcategory")
         visible_frame_size = self._extract_labeled_value(card, "Frame size")
         frame_result = evaluate_frame_size(
             title=title,
@@ -104,7 +168,7 @@ class VelomarktScraper(BaseScraper):
             target_frame_sizes=self.search_config.target_frame_sizes,
         )
 
-        return BikeListing(
+        listing = BikeListing(
             title=title,
             price=self._extract_price(raw_text),
             location=self._extract_location(raw_text),
@@ -119,6 +183,149 @@ class VelomarktScraper(BaseScraper):
             raw_text=raw_text,
             is_relevant=frame_result.is_relevant,
             needs_manual_review=frame_result.needs_manual_review,
+        )
+        return listing, category, subcategory
+
+    def _apply_filters(
+        self,
+        listing: BikeListing,
+        category: str | None,
+        subcategory: str | None,
+    ) -> BikeListing | None:
+        """Apply configured search filters to one parsed listing.
+
+        Returning `None` means the listing is skipped and never reaches SQLite.
+        Returning a `BikeListing` means the listing should be stored. Some kept
+        listings are marked for manual review when important data is unclear.
+        """
+
+        if not self._matches_configured_brand(listing):
+            logger.info("Skipping %r because no configured brand matched", listing.title)
+            return None
+
+        listing = self._apply_price_filter(listing)
+        if listing is None:
+            return None
+
+        listing = self._apply_frame_size_filter(listing)
+        if listing is None:
+            return None
+
+        return self._apply_category_filter(listing, category, subcategory)
+
+    def _matches_configured_brand(self, listing: BikeListing) -> bool:
+        """Check configured brands against title, brand, model, and raw text."""
+
+        haystack = " ".join(
+            value
+            for value in [
+                listing.title,
+                listing.brand,
+                listing.model,
+                listing.raw_text,
+            ]
+            if value
+        ).casefold()
+
+        return any(brand.casefold() in haystack for brand in self.search_config.brands)
+
+    def _apply_price_filter(self, listing: BikeListing) -> BikeListing | None:
+        """Skip expensive listings and keep missing prices for manual review."""
+
+        max_price = self.search_config.max_price
+        if max_price <= 0:
+            return listing
+
+        if listing.price is None:
+            logger.info("Keeping %r for manual review because price is missing", listing.title)
+            return replace(listing, needs_manual_review=True)
+
+        if listing.price > max_price:
+            logger.info(
+                "Skipping %r because price %s is above max_price %s",
+                listing.title,
+                listing.price,
+                max_price,
+            )
+            return None
+
+        return listing
+
+    def _apply_frame_size_filter(self, listing: BikeListing) -> BikeListing | None:
+        """Keep matching sizes, skip clear mismatches, review unknown sizes."""
+
+        if listing.frame_size is None or listing.frame_size_confidence == "unknown":
+            logger.info(
+                "Keeping %r for manual review because frame size is unclear",
+                listing.title,
+            )
+            return replace(listing, needs_manual_review=True)
+
+        if not listing.is_relevant:
+            logger.info(
+                "Skipping %r because frame size %r does not match targets %s",
+                listing.title,
+                listing.frame_size,
+                self.search_config.target_frame_sizes,
+            )
+            return None
+
+        return listing
+
+    def _apply_category_filter(
+        self,
+        listing: BikeListing,
+        category: str | None,
+        subcategory: str | None,
+    ) -> BikeListing | None:
+        """Keep bicycles and frames, skip accessories and unclear non-bikes."""
+
+        category_text = " ".join(
+            value for value in [category, subcategory] if value
+        ).casefold()
+
+        if not category_text:
+            logger.info(
+                "Keeping %r for manual review because category is missing",
+                listing.title,
+            )
+            return replace(listing, needs_manual_review=True)
+
+        # Frames are relevant to the project even when a marketplace groups
+        # them near accessories or parts.
+        if any(keyword in category_text for keyword in {"frame", "frames", "rahmen"}):
+            return listing
+
+        if any(keyword in category_text for keyword in self.EXCLUDED_CATEGORY_KEYWORDS):
+            logger.info(
+                "Skipping %r because category/subcategory is not a bike: %r",
+                listing.title,
+                category_text,
+            )
+            return None
+
+        if any(keyword in category_text for keyword in self.INCLUDED_CATEGORY_KEYWORDS):
+            return listing
+
+        logger.info(
+            "Keeping %r for manual review because category is unclear: %r",
+            listing.title,
+            category_text,
+        )
+        return replace(listing, needs_manual_review=True)
+
+    def _build_page_url(self, page_number: int) -> str:
+        """Build a Velomarkt page URL from the configured first-page URL."""
+
+        base_url = self.search_config.velomarkt_search_url
+        if page_number == 1:
+            return base_url
+
+        parsed_url = urlparse(base_url)
+        query = parse_qs(parsed_url.query)
+        query["page"] = [str(page_number)]
+        return urlunparse(
+            parsed_url._replace(query=urlencode(query, doseq=True))
         )
 
     def _extract_title(self, card: Tag) -> str | None:

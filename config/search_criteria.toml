@@ -6,28 +6,31 @@
 [search]
 # The brands you are interested in. Future scrapers can use these values when
 # building search URLs or filtering listing results.
-brands = ["Cube", "Trek", "Specialized"]
+brands = ["ARC8", "Scott"]
 
 # Maximum price in your local currency.
 max_price = 1500
 
 # Optional frame size filter. Leave this empty if you do not care.
-frame_size = "M"
+frame_size = "L"
 
 # Frame sizes that should be treated as relevant. You can mix letter sizes and
 # numeric road-bike sizes.
-target_frame_sizes = ["L", "56"]
+target_frame_sizes = ["L"]
 
 # Search locations can be city names, regions, or marketplace-specific areas.
-locations = ["Zurich", "Winterthur"]
+locations = []
 
 # First real marketplace source. Keep this to one Velomarkt search/category URL
 # for now so the scraper stays easy to understand.
 velomarkt_search_url = "https://velomarkt.ch/en/veloboerse/all-switzerland"
 
+# Number of Velomarkt result pages to request. Page 1 is the configured URL.
+max_pages = 10
+
 # Minimum publication date filter. This is a plain string for now to keep the
 # beginner example simple. Later, this can become a real `datetime.date`.
-posted_after = "2026-01-01"
+posted_after = ""
 
 [alerts]
 # This project does not send alerts yet. The setting is here to show where

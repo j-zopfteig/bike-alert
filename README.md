@@ -14,9 +14,9 @@ The project is set up for:
 - Clear separation between app startup, configuration, database access,
   scraping, and exporting
 
-The app includes both a fake scraper with five hardcoded listings and one real
-scraper for Velomarkt.ch. Other Swiss marketplaces are intentionally not added
-yet.
+The project includes a fake scraper with five hardcoded listings for tests and
+one real scraper for Velomarkt.ch. Normal application runs use Velomarkt only.
+Other Swiss marketplaces are intentionally not added yet.
 
 ## Project Structure
 
@@ -126,9 +126,10 @@ application and is disabled for the Swiss used-bike marketplace workflow.
 3. `config.py` loads `config/search_criteria.toml`.
 4. `database.py` creates `data/bike_alert.sqlite3` and the `bike_listings`
    table if they do not exist yet.
-5. `FakeScraper` returns five hardcoded listings.
-6. `VelomarktScraper` requests one configured Velomarkt.ch search/category URL
+5. `VelomarktScraper` requests one configured Velomarkt.ch search/category URL
    and parses its listing cards with BeautifulSoup.
+6. Listings are filtered by configured brands, maximum price, frame size, and
+   Velomarkt category before they are stored.
 7. `Database.save_listings()` uses a unique `url` column plus SQLite upsert
    logic, so running the app repeatedly does not create duplicate rows and
    existing listings can still receive updated prices.
@@ -140,15 +141,32 @@ application and is disabled for the Swiss used-bike marketplace workflow.
 Edit `config/search_criteria.toml`:
 
 ```toml
-target_frame_sizes = ["L", "56"]
+brands = ["ARC8", "Scott"]
+max_price = 1500
+frame_size = "L"
+target_frame_sizes = ["L"]
+locations = []
+posted_after = ""
 velomarkt_search_url = "https://velomarkt.ch/en/veloboerse/all-switzerland"
+max_pages = 10
 ```
 
-`target_frame_sizes` controls relevance:
+The Velomarkt scraper applies these filters before storing listings:
 
-- A parsed matching size, such as `L` or `56`, sets `is_relevant = true`.
-- A parsed non-matching size sets `is_relevant = false`.
-- A missing or unclear size sets `needs_manual_review = true`.
+- `brands`: case-insensitive match against title, visible brand, model, and raw
+  text. Listings with no matching brand are skipped.
+- `max_price`: listings above this price are skipped. Missing prices are kept
+  for manual review.
+- `target_frame_sizes`: matching sizes are kept as relevant, clear mismatches
+  are skipped, and unknown sizes are kept for manual review.
+- `max_pages`: controls Velomarkt pagination. The scraper stops early if a page
+  has no listing cards.
+- `locations` and `posted_after`: loaded from config but intentionally ignored
+  for now.
+
+The scraper also keeps only actual bicycles and frames. Accessories, parts,
+clothing, shoes, helmets, components, and spare parts are skipped. Listings
+with unclear category information are kept for manual review.
 
 The frame-size parser recognizes examples such as `Size L`, `Grösse L`,
 `Rahmen L`, `Rahmengrösse L`, `RH 56`, `Rahmenhöhe 56`, `56 cm`, and `56cm`.
@@ -165,4 +183,10 @@ pip install -r requirements.txt
 
 ```powershell
 python main.py
+```
+
+## Tests
+
+```powershell
+python -m unittest
 ```
