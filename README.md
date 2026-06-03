@@ -12,35 +12,38 @@ The project is set up for:
 - Clear separation between app startup, configuration, database access,
   scraping, and exporting
 
-Actual web scraping is intentionally not implemented yet.
+Actual web scraping is intentionally not implemented yet. The app currently
+uses a fake scraper with five hardcoded listings so the database and Excel
+export can be tested safely.
 
 ## Project Structure
 
 ```text
 bike-alert/
-├── main.py
-├── pyproject.toml
-├── requirements.txt
-├── README.md
-├── config/
-│   └── search_criteria.toml
-├── data/
-│   └── .gitkeep
-├── exports/
-│   └── .gitkeep
-└── bike_alert/
-    ├── __init__.py
-    ├── app.py
-    ├── config.py
-    ├── database.py
-    ├── models.py
-    ├── exporters/
-    │   ├── __init__.py
-    │   └── excel_exporter.py
-    └── scrapers/
-        ├── __init__.py
-        ├── base.py
-        └── example_scraper.py
+|-- main.py
+|-- pyproject.toml
+|-- requirements.txt
+|-- README.md
+|-- config/
+|   `-- search_criteria.toml
+|-- data/
+|   `-- .gitkeep
+|-- exports/
+|   `-- .gitkeep
+`-- bike_alert/
+    |-- __init__.py
+    |-- app.py
+    |-- config.py
+    |-- database.py
+    |-- models.py
+    |-- exporters/
+    |   |-- __init__.py
+    |   `-- excel_exporter.py
+    `-- scrapers/
+        |-- __init__.py
+        |-- base.py
+        |-- example_scraper.py
+        `-- fake_scraper.py
 ```
 
 ## Files Explained
@@ -70,13 +73,14 @@ the otherwise-empty folder in Git.
 
 `bike_alert/app.py`
 : Coordinates the application flow: load config, prepare the database, run
-placeholder scrapers, and export results.
+the fake scraper, store unique listings, and export results.
 
 `bike_alert/config.py`
 : Reads the TOML configuration file and converts it into Python dataclasses.
 
 `bike_alert/database.py`
-: Owns the SQLite connection and table creation logic.
+: Owns the SQLite connection, table creation logic, duplicate prevention, and
+loading stored listings.
 
 `bike_alert/models.py`
 : Defines the `BikeListing` dataclass used to pass listing data between the
@@ -90,8 +94,25 @@ from this class.
 : A placeholder scraper that demonstrates the shape of a scraper without doing
 any network requests or parsing.
 
+`bike_alert/scrapers/fake_scraper.py`
+: Returns five hardcoded `BikeListing` objects. It behaves like a scraper from
+the app's point of view, but it does not scrape websites.
+
 `bike_alert/exporters/excel_exporter.py`
 : Exports bike listings to an `.xlsx` file using `openpyxl`.
+
+## What Happens When You Run It
+
+1. `main.py` calls `bike_alert.app.run()`.
+2. `app.py` configures logging so each step is visible in the terminal.
+3. `config.py` loads `config/search_criteria.toml`.
+4. `database.py` creates `data/bike_alert.sqlite3` and the `bike_listings`
+   table if they do not exist yet.
+5. `FakeScraper` returns five hardcoded listings.
+6. `Database.save_listings()` uses `INSERT OR IGNORE` with a unique `url`
+   column, so running the app repeatedly does not create duplicate rows.
+7. `Database.list_all_listings()` reads the unique stored listings back.
+8. `excel_exporter.py` writes those listings to `exports/bike_listings.xlsx`.
 
 ## Install
 

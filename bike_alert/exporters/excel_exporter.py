@@ -6,10 +6,14 @@ database works.
 """
 
 from pathlib import Path
+import logging
 
 from openpyxl import Workbook
 
 from bike_alert.models import BikeListing
+
+
+logger = logging.getLogger(__name__)
 
 
 def export_listings_to_excel(listings: list[BikeListing], export_path: Path) -> None:
@@ -47,3 +51,4 @@ def export_listings_to_excel(listings: list[BikeListing], export_path: Path) -> 
         cell.style = "Headline 4"
 
     workbook.save(export_path)
+    logger.info("Excel export written to %s", export_path)

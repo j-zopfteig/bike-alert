@@ -5,9 +5,13 @@ file and Python includes SQLite support in the standard library.
 """
 
 from pathlib import Path
+import logging
 import sqlite3
 
 from bike_alert.models import BikeListing
+
+
+logger = logging.getLogger(__name__)
 
 
 class Database:
@@ -27,7 +31,12 @@ class Database:
         # Ensure the `data/` folder exists before SQLite tries to create the
         # database file inside it.
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
-        return sqlite3.connect(self.database_path)
+        connection = sqlite3.connect(self.database_path)
+
+        # Row objects let us access columns by name, for example row["title"].
+        # This is easier to read than remembering numeric positions.
+        connection.row_factory = sqlite3.Row
+        return connection
 
     def initialize(self) -> None:
         """Create required database tables if they do not already exist."""
@@ -46,16 +55,21 @@ class Database:
                 )
                 """
             )
+        logger.info("Database table is ready")
 
-    def save_listings(self, listings: list[BikeListing]) -> None:
+    def save_listings(self, listings: list[BikeListing]) -> int:
         """Save bike listings to SQLite.
 
         `INSERT OR IGNORE` prevents duplicate rows when a listing has the same
         URL as one already stored in the database.
+
+        Returns:
+            The number of new rows inserted.
         """
 
         if not listings:
-            return
+            logger.info("No listings to save")
+            return 0
 
         rows = [
             (
@@ -70,6 +84,7 @@ class Database:
         ]
 
         with self.connect() as connection:
+            before_count = connection.total_changes
             connection.executemany(
                 """
                 INSERT OR IGNORE INTO bike_listings (
@@ -84,3 +99,35 @@ class Database:
                 """,
                 rows,
             )
+            inserted_count = connection.total_changes - before_count
+
+        logger.info(
+            "Saved listings to SQLite: %s new, %s ignored as duplicates",
+            inserted_count,
+            len(listings) - inserted_count,
+        )
+        return inserted_count
+
+    def list_all_listings(self) -> list[BikeListing]:
+        """Load all unique bike listings currently stored in SQLite."""
+
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT title, price, location, url, source, posted_date
+                FROM bike_listings
+                ORDER BY id
+                """
+            ).fetchall()
+
+        return [
+            BikeListing(
+                title=row["title"],
+                price=row["price"],
+                location=row["location"],
+                url=row["url"],
+                source=row["source"],
+                posted_date=row["posted_date"],
+            )
+            for row in rows
+        ]
