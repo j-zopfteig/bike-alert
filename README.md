@@ -1,20 +1,22 @@
 # Bike Alert
 
-Beginner-friendly Python 3.14 project structure for a future bike listing alert
-application.
+Beginner-friendly Python 3.14 project structure for a Swiss used-bike listing
+alert application.
 
 The project is set up for:
 
 - SQLite storage
 - TOML configuration for search criteria
 - A scraper architecture with a reusable base class
-- A real scraper using `requests` and BeautifulSoup
+- A real Velomarkt.ch scraper using `requests` and BeautifulSoup
+- Frame-size parsing and relevance flags
 - Excel export
 - Clear separation between app startup, configuration, database access,
   scraping, and exporting
 
-The app includes both a fake scraper with five hardcoded listings and a real
-scraper for one public bike listing page.
+The app includes both a fake scraper with five hardcoded listings and one real
+scraper for Velomarkt.ch. Other Swiss marketplaces are intentionally not added
+yet.
 
 ## Project Structure
 
@@ -36,6 +38,7 @@ bike-alert/
     |-- config.py
     |-- database.py
     |-- models.py
+    |-- frame_size.py
     |-- exporters/
     |   |-- __init__.py
     |   `-- excel_exporter.py
@@ -44,7 +47,8 @@ bike-alert/
         |-- base.py
         |-- bike_discount_scraper.py
         |-- example_scraper.py
-        `-- fake_scraper.py
+        |-- fake_scraper.py
+        `-- velomarkt_scraper.py
 ```
 
 ## Files Explained
@@ -63,7 +67,7 @@ requirements.txt`.
 
 `config/search_criteria.toml`
 : Human-editable search settings such as bike brands, maximum price, frame
-size, and listing locations.
+size, target frame sizes, listing locations, and the Velomarkt URL to scrape.
 
 `data/`
 : Intended location for the SQLite database file. The `.gitkeep` file keeps
@@ -87,6 +91,10 @@ loading stored listings.
 : Defines the `BikeListing` dataclass used to pass listing data between the
 scraper, database, and exporter layers.
 
+`bike_alert/frame_size.py`
+: Extracts frame sizes from listing titles and raw text, then decides whether
+the listing matches your configured target frame sizes.
+
 `bike_alert/scrapers/base.py`
 : Defines the abstract base scraper class. Future real scrapers should inherit
 from this class.
@@ -99,10 +107,14 @@ any network requests or parsing.
 : Returns five hardcoded `BikeListing` objects. It behaves like a scraper from
 the app's point of view, but it does not scrape websites.
 
+`bike_alert/scrapers/velomarkt_scraper.py`
+: Uses `requests` to download one configured Velomarkt.ch page, parses listing
+cards with BeautifulSoup, converts them into `BikeListing` objects, and logs
+each extracted listing.
+
 `bike_alert/scrapers/bike_discount_scraper.py`
-: Uses `requests` to download Bike-Discount's public bike category page, parses
-the HTML with BeautifulSoup, converts product cards into `BikeListing` objects,
-and logs each extracted listing.
+: Legacy retail scraper from an earlier experiment. It is not imported by the
+application and is disabled for the Swiss used-bike marketplace workflow.
 
 `bike_alert/exporters/excel_exporter.py`
 : Exports bike listings to an `.xlsx` file using `openpyxl`.
@@ -115,13 +127,31 @@ and logs each extracted listing.
 4. `database.py` creates `data/bike_alert.sqlite3` and the `bike_listings`
    table if they do not exist yet.
 5. `FakeScraper` returns five hardcoded listings.
-6. `BikeDiscountScraper` requests one public bike listing page and parses its
-   product cards with BeautifulSoup.
+6. `VelomarktScraper` requests one configured Velomarkt.ch search/category URL
+   and parses its listing cards with BeautifulSoup.
 7. `Database.save_listings()` uses a unique `url` column plus SQLite upsert
    logic, so running the app repeatedly does not create duplicate rows and
    existing listings can still receive updated prices.
 8. `Database.list_all_listings()` reads the unique stored listings back.
 9. `excel_exporter.py` writes those listings to `exports/bike_listings.xlsx`.
+
+## Configure Velomarkt
+
+Edit `config/search_criteria.toml`:
+
+```toml
+target_frame_sizes = ["L", "56"]
+velomarkt_search_url = "https://velomarkt.ch/en/veloboerse/all-switzerland"
+```
+
+`target_frame_sizes` controls relevance:
+
+- A parsed matching size, such as `L` or `56`, sets `is_relevant = true`.
+- A parsed non-matching size sets `is_relevant = false`.
+- A missing or unclear size sets `needs_manual_review = true`.
+
+The frame-size parser recognizes examples such as `Size L`, `Grösse L`,
+`Rahmen L`, `Rahmengrösse L`, `RH 56`, `Rahmenhöhe 56`, `56 cm`, and `56cm`.
 
 ## Install
 

@@ -14,8 +14,16 @@ max_price = 1500
 # Optional frame size filter. Leave this empty if you do not care.
 frame_size = "M"
 
+# Frame sizes that should be treated as relevant. You can mix letter sizes and
+# numeric road-bike sizes.
+target_frame_sizes = ["L", "56"]
+
 # Search locations can be city names, regions, or marketplace-specific areas.
 locations = ["Zurich", "Winterthur"]
+
+# First real marketplace source. Keep this to one Velomarkt search/category URL
+# for now so the scraper stays easy to understand.
+velomarkt_search_url = "https://velomarkt.ch/en/veloboerse/all-switzerland"
 
 # Minimum publication date filter. This is a plain string for now to keep the
 # beginner example simple. Later, this can become a real `datetime.date`.

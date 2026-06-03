@@ -51,11 +51,47 @@ class Database:
                     location TEXT,
                     url TEXT UNIQUE,
                     source TEXT NOT NULL,
-                    posted_date TEXT
+                    posted_date TEXT,
+                    brand TEXT,
+                    model TEXT,
+                    condition TEXT,
+                    frame_size TEXT,
+                    frame_size_confidence TEXT DEFAULT 'unknown',
+                    raw_text TEXT DEFAULT '',
+                    is_relevant INTEGER DEFAULT 0,
+                    needs_manual_review INTEGER DEFAULT 1
                 )
                 """
             )
+            self._ensure_columns(connection)
         logger.info("Database table is ready")
+
+    def _ensure_columns(self, connection: sqlite3.Connection) -> None:
+        """Add missing columns when an older SQLite database already exists."""
+
+        existing_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(bike_listings)").fetchall()
+        }
+        required_columns = {
+            "brand": "TEXT",
+            "model": "TEXT",
+            "condition": "TEXT",
+            "frame_size": "TEXT",
+            "frame_size_confidence": "TEXT DEFAULT 'unknown'",
+            "raw_text": "TEXT DEFAULT ''",
+            "is_relevant": "INTEGER DEFAULT 0",
+            "needs_manual_review": "INTEGER DEFAULT 1",
+        }
+
+        for column_name, column_sql in required_columns.items():
+            if column_name in existing_columns:
+                continue
+
+            logger.info("Adding missing database column: %s", column_name)
+            connection.execute(
+                f"ALTER TABLE bike_listings ADD COLUMN {column_name} {column_sql}"
+            )
 
     def save_listings(self, listings: list[BikeListing]) -> int:
         """Save bike listings to SQLite.
@@ -81,6 +117,14 @@ class Database:
                 listing.url,
                 listing.source,
                 listing.posted_date,
+                listing.brand,
+                listing.model,
+                listing.condition,
+                listing.frame_size,
+                listing.frame_size_confidence,
+                listing.raw_text,
+                int(listing.is_relevant),
+                int(listing.needs_manual_review),
             )
             for listing in listings
         ]
@@ -97,15 +141,31 @@ class Database:
                     location,
                     url,
                     source,
-                    posted_date
+                    posted_date,
+                    brand,
+                    model,
+                    condition,
+                    frame_size,
+                    frame_size_confidence,
+                    raw_text,
+                    is_relevant,
+                    needs_manual_review
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(url) DO UPDATE SET
                     title = excluded.title,
                     price = excluded.price,
                     location = excluded.location,
                     source = excluded.source,
-                    posted_date = excluded.posted_date
+                    posted_date = excluded.posted_date,
+                    brand = excluded.brand,
+                    model = excluded.model,
+                    condition = excluded.condition,
+                    frame_size = excluded.frame_size,
+                    frame_size_confidence = excluded.frame_size_confidence,
+                    raw_text = excluded.raw_text,
+                    is_relevant = excluded.is_relevant,
+                    needs_manual_review = excluded.needs_manual_review
                 """,
                 rows,
             )
@@ -140,7 +200,21 @@ class Database:
         with self.connect() as connection:
             rows = connection.execute(
                 """
-                SELECT title, price, location, url, source, posted_date
+                SELECT
+                    title,
+                    price,
+                    location,
+                    url,
+                    source,
+                    posted_date,
+                    brand,
+                    model,
+                    condition,
+                    frame_size,
+                    frame_size_confidence,
+                    raw_text,
+                    is_relevant,
+                    needs_manual_review
                 FROM bike_listings
                 ORDER BY id
                 """
@@ -154,6 +228,14 @@ class Database:
                 url=row["url"],
                 source=row["source"],
                 posted_date=row["posted_date"],
+                brand=row["brand"],
+                model=row["model"],
+                condition=row["condition"],
+                frame_size=row["frame_size"],
+                frame_size_confidence=row["frame_size_confidence"],
+                raw_text=row["raw_text"],
+                is_relevant=bool(row["is_relevant"]),
+                needs_manual_review=bool(row["needs_manual_review"]),
             )
             for row in rows
         ]

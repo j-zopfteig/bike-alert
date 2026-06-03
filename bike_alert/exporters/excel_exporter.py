@@ -36,18 +36,41 @@ def export_listings_to_excel(listings: list[BikeListing], export_path: Path) -> 
     sheet = workbook.active
     sheet.title = "Bike Listings"
 
-    headers = ["Title", "Price", "Location", "URL", "Source", "Posted Date"]
+    headers = [
+        "Title",
+        "Brand",
+        "Model",
+        "Price",
+        "Location",
+        "Condition",
+        "Frame Size",
+        "Frame Size Confidence",
+        "Is Relevant",
+        "Needs Manual Review",
+        "URL",
+        "Source",
+        "Posted Date",
+        "Raw Text",
+    ]
     sheet.append(headers)
 
     for listing in listings:
         sheet.append(
             [
                 listing.title,
+                listing.brand,
+                listing.model,
                 listing.price,
                 listing.location,
+                listing.condition,
+                listing.frame_size,
+                listing.frame_size_confidence,
+                listing.is_relevant,
+                listing.needs_manual_review,
                 listing.url,
                 listing.source,
                 listing.posted_date,
+                listing.raw_text,
             ]
         )
 

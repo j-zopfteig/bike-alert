@@ -22,3 +22,11 @@ class BikeListing:
     url: str
     source: str
     posted_date: str | None
+    brand: str | None = None
+    model: str | None = None
+    condition: str | None = None
+    frame_size: str | None = None
+    frame_size_confidence: str = "unknown"
+    raw_text: str = ""
+    is_relevant: bool = False
+    needs_manual_review: bool = True

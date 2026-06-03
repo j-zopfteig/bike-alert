@@ -21,8 +21,10 @@ class SearchConfig:
     brands: list[str]
     max_price: int
     frame_size: str
+    target_frame_sizes: list[str]
     locations: list[str]
     posted_after: str
+    velomarkt_search_url: str
     alerts_enabled: bool
 
 
@@ -46,7 +48,9 @@ def load_search_config(config_path: Path) -> SearchConfig:
         brands=search_section["brands"],
         max_price=search_section["max_price"],
         frame_size=search_section["frame_size"],
+        target_frame_sizes=search_section["target_frame_sizes"],
         locations=search_section["locations"],
         posted_after=search_section["posted_after"],
+        velomarkt_search_url=search_section["velomarkt_search_url"],
         alerts_enabled=alerts_section["enabled"],
     )

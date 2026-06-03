@@ -11,8 +11,8 @@ from pathlib import Path
 from bike_alert.config import load_search_config
 from bike_alert.database import Database
 from bike_alert.exporters.excel_exporter import export_listings_to_excel
-from bike_alert.scrapers.bike_discount_scraper import BikeDiscountScraper
 from bike_alert.scrapers.fake_scraper import FakeScraper
+from bike_alert.scrapers.velomarkt_scraper import VelomarktScraper
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -58,11 +58,11 @@ def run() -> None:
     logger.info("Preparing SQLite database at %s", DATABASE_PATH)
     database.initialize()
 
-    # FakeScraper stays useful for predictable local learning data.
-    # BikeDiscountScraper is the first real requests + BeautifulSoup scraper.
+    # FakeScraper stays useful for predictable local test data.
+    # VelomarktScraper is the first real Swiss used-bike marketplace scraper.
     scrapers = [
         FakeScraper(search_config=search_config),
-        BikeDiscountScraper(search_config=search_config),
+        VelomarktScraper(search_config=search_config),
     ]
 
     all_listings = []
@@ -78,6 +78,11 @@ def run() -> None:
     logger.info("Scraper found %s listings", len(all_listings))
     logger.info("Inserted %s new listings", inserted_count)
     logger.info("Database now contains %s unique listings", len(stored_listings))
+    logger.info(
+        "Relevant listings: %s, manual review needed: %s",
+        sum(listing.is_relevant for listing in stored_listings),
+        sum(listing.needs_manual_review for listing in stored_listings),
+    )
 
     written_export_path = export_listings_to_excel(stored_listings, EXPORT_PATH)
 
